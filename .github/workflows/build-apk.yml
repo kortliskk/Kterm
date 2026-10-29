@@ -22,20 +22,15 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Projeyi düzelt
+          - name: Android SDK hazırla
         run: |
-          mkdir -p app/src/main/java/com/kortlis/kterm
-          mkdir -p app/src/main/res/values
-          mv MainActivity.java app/src/main/java/com/kortlis/kterm/
-          mv AndroidManifest.xml app/src/main/
-          mv styles.xml app/src/main/res/values/
-          mv build.gradle app/build.gradle
-
-          cat > build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application' version '8.5.2' apply false
-          }
-          EOF
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | head -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager bulunamadı"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platforms;android-35" "build-tools;35.0.0"
 
       - name: Android SDK kur
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"

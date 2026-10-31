@@ -37,13 +37,14 @@ jobs:
       - name: Android lisanslarini kabul et
         shell: bash
         run: |
-          yes | sdkmanager --licenses
+          set +o pipefail
+          yes | sdkmanager --licenses || true
 
-      - name: Resmi Termux gereksinimlerini kur
+      - name: Termux Gradle ayarlarini kontrol et
         working-directory: upstream
         shell: bash
         run: |
-          echo "Termux Gradle ayarlari kontrol ediliyor..."
+          echo "Gradle ayarlari kontrol ediliyor..."
           cat gradle.properties
 
       - name: Uygulama adini KTerm yap

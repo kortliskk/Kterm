@@ -1,9 +1,8 @@
-name: KTerm APK Derle
+name: KTerm - Gercek Termux APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -11,12 +10,19 @@ permissions:
 
 jobs:
   build:
-    name: Android APK Oluştur
+    name: KTerm Android APK
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Kaynak kodunu indir
+      - name: KTerm yapilandirma deposunu al
         uses: actions/checkout@v4
+
+      - name: Resmi Termux uygulama kaynak kodunu al
+        uses: actions/checkout@v4
+        with:
+          repository: termux/termux-app
+          ref: master
+          path: upstream
 
       - name: Java 17 kur
         uses: actions/setup-java@v4
@@ -24,75 +30,62 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK hazırla
+      - name: Android SDK hazirla
         uses: android-actions/setup-android@v4
 
-      - name: Gradle 8.7 hazırla
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
-
-      - name: Android proje klasörlerini oluştur
+      - name: Gerekli Android SDK ve NDK paketlerini kur
         shell: bash
         run: |
-          set -euo pipefail
-
-          mkdir -p app/src/main/java/com/kortlis/kterm
-          mkdir -p app/src/main/res/values
-
-          test -f MainActivity.java
-          test -f AndroidManifest.xml
-          test -f styles.xml
-
-          cp MainActivity.java \
-            app/src/main/java/com/kortlis/kterm/MainActivity.java
-
-          cp AndroidManifest.xml \
-            app/src/main/AndroidManifest.xml
-
-          cp styles.xml \
-            app/src/main/res/values/styles.xml
-
-      - name: Android uygulama ayarlarını oluştur
-        shell: bash
-        run: |
-          cat > app/build.gradle <<'EOF'
-          plugins {
-              id 'com.android.application'
-          }
-
-          android {
-              namespace 'com.kortlis.kterm'
-              compileSdk 35
-
-              defaultConfig {
-                  applicationId 'com.kortlis.kterm'
-                  minSdk 23
-                  targetSdk 28
-                  versionCode 1
-                  versionName '1.0'
-              }
-
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-          EOF
-
-      - name: Android SDK paketlerini kur
-        run: |
+          yes | sdkmanager --licenses >/dev/null
           sdkmanager --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+            "platforms;android-30" \
+            "build-tools;30.0.3" \
+            "ndk;22.1.7171670"
 
-      - name: APK derle
-        run: gradle --no-daemon assembleDebug
+      - name: Uygulama adini KTerm yap
+        working-directory: upstream
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: APK dosyasını yayınla
+          strings = Path("app/src/main/res/values/strings.xml")
+          content = strings.read_text(encoding="utf-8")
+          old = '<!ENTITY TERMUX_APP_NAME "Termux">'
+          new = '<!ENTITY TERMUX_APP_NAME "KTerm">'
+          if old not in content:
+              raise SystemExit("Termux uygulama adi satiri bulunamadi.")
+          strings.write_text(content.replace(old, new, 1), encoding="utf-8")
+
+          gradle = Path("app/build.gradle")
+          content = gradle.read_text(encoding="utf-8")
+          old = 'manifestPlaceholders.TERMUX_APP_NAME = "Termux"'
+          new = 'manifestPlaceholders.TERMUX_APP_NAME = "KTerm"'
+          if old not in content:
+              raise SystemExit("Gradle uygulama adi ayari bulunamadi.")
+          gradle.write_text(content.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Gercek Termux altyapisiyla KTerm APK derle
+        working-directory: upstream
+        env:
+          TERMUX_PACKAGE_VARIANT: apt-android-7
+          TERMUX_APP_VERSION_NAME: 0.118.0+kterm.1
+          TERMUX_APK_VERSION_TAG: kterm-2.0.0
+          TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS: '1'
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Universal APK dosyasini kontrol et
+        shell: bash
+        run: |
+          APK="upstream/app/build/outputs/apk/debug/termux-app_kterm-2.0.0_universal.apk"
+          test -s "$APK"
+          ls -lh "$APK"
+
+      - name: KTerm APK artifact olarak yayinla
         uses: actions/upload-artifact@v4
         with:
-          name: KTerm-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: KTerm-2.0.0-Universal-APK
+          path: upstream/app/build/outputs/apk/debug/termux-app_kterm-2.0.0_universal.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14

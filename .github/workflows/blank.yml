@@ -2,7 +2,8 @@ name: KTerm - Gercek Termux APK
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,7 @@ jobs:
       - name: KTerm yapilandirma deposunu al
         uses: actions/checkout@v4
 
-      - name: Resmi Termux uygulama kaynak kodunu al
+      - name: Resmi Termux kaynak kodunu al
         uses: actions/checkout@v4
         with:
           repository: termux/termux-app
@@ -33,14 +34,17 @@ jobs:
       - name: Android SDK hazirla
         uses: android-actions/setup-android@v4
 
-      - name: Gerekli Android SDK ve NDK paketlerini kur
+      - name: Android lisanslarini kabul et
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager --install \
-            "platforms;android-30" \
-            "build-tools;30.0.3" \
-            "ndk;22.1.7171670"
+          yes | sdkmanager --licenses
+
+      - name: Resmi Termux gereksinimlerini kur
+        working-directory: upstream
+        shell: bash
+        run: |
+          echo "Termux Gradle ayarlari kontrol ediliyor..."
+          cat gradle.properties
 
       - name: Uygulama adini KTerm yap
         working-directory: upstream
@@ -51,20 +55,39 @@ jobs:
 
           strings = Path("app/src/main/res/values/strings.xml")
           content = strings.read_text(encoding="utf-8")
+
           old = '<!ENTITY TERMUX_APP_NAME "Termux">'
           new = '<!ENTITY TERMUX_APP_NAME "KTerm">'
+
           if old not in content:
-              raise SystemExit("Termux uygulama adi satiri bulunamadi.")
-          strings.write_text(content.replace(old, new, 1), encoding="utf-8")
+              raise SystemExit("Uygulama adi bulunamadi.")
+
+          strings.write_text(
+              content.replace(old, new, 1),
+              encoding="utf-8"
+          )
 
           gradle = Path("app/build.gradle")
           content = gradle.read_text(encoding="utf-8")
+
           old = 'manifestPlaceholders.TERMUX_APP_NAME = "Termux"'
           new = 'manifestPlaceholders.TERMUX_APP_NAME = "KTerm"'
+
           if old not in content:
               raise SystemExit("Gradle uygulama adi ayari bulunamadi.")
-          gradle.write_text(content.replace(old, new, 1), encoding="utf-8")
+
+          gradle.write_text(
+              content.replace(old, new, 1),
+              encoding="utf-8"
+          )
           PY
+
+      - name: Gradle Wrapper izinlerini ayarla
+        working-directory: upstream
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --version
 
       - name: Gercek Termux altyapisiyla KTerm APK derle
         working-directory: upstream
@@ -73,16 +96,30 @@ jobs:
           TERMUX_APP_VERSION_NAME: 0.118.0+kterm.1
           TERMUX_APK_VERSION_TAG: kterm-2.0.0
           TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS: '1'
-        run: ./gradlew --no-daemon assembleDebug
+        run: |
+          ./gradlew --no-daemon assembleDebug
+
+      - name: APK dosyalarini listele
+        shell: bash
+        run: |
+          find upstream/app/build/outputs/apk \
+            -type f -name "*.apk" -print
 
       - name: Universal APK dosyasini kontrol et
         shell: bash
         run: |
           APK="upstream/app/build/outputs/apk/debug/termux-app_kterm-2.0.0_universal.apk"
-          test -s "$APK"
+
+          if [ ! -s "$APK" ]; then
+            echo "Universal APK bulunamadi!"
+            echo "Mevcut APK dosyalari:"
+            find upstream/app/build/outputs/apk -type f -name "*.apk"
+            exit 1
+          fi
+
           ls -lh "$APK"
 
-      - name: KTerm APK artifact olarak yayinla
+      - name: KTerm APK dosyasini yayinla
         uses: actions/upload-artifact@v4
         with:
           name: KTerm-2.0.0-Universal-APK
